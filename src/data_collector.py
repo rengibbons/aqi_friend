@@ -1,6 +1,7 @@
 """
 Author: Ren Gibbons
 Email: gibbons.ren@gmail.com
+Date Created: 2021-01-09
 
 Helpful reference links:
     https://hackernoon.com/how-to-measure-particulate-matter-with-a-raspberry-pi-75faa470ec35
@@ -11,7 +12,12 @@ Helpful reference links:
 from datetime import datetime
 from pytz import timezone
 import serial
+
+import numpy as np
 from sense_hat import SenseHat
+
+from aqi_tables import PM_25_AQI_SCALE, PM_10_AQI_SCALE
+
 
 sense = SenseHat()
 serial_device = serial.Serial()
@@ -75,6 +81,36 @@ def get_particulate_readings():
     return pm_25, pm_10
 
 
+def find_aqi_group(pm: float, aqi_scale: np.array):
+    """ . """
+    aqi_scale = aqi_scale[aqi_scale["c_lo"] <= pm]
+    aqi_scale = aqi_scale[aqi_scale["c_hi"] >= pm]
+    if aqi_scale.shape[0] != 1:
+        raise Exception(f"{aqi_scale.shape[0]} AQI groups found. Something went wrong.")
+    return aqi_scale[0]
+
+
+def compute_aqi(pm: float, pm_size: str):
+    """ Computes air quality index (AQI) for a PM readings
+
+    Args:
+        pm: the PM reading
+        pm_size: flag specifying PM2.5 or PM10
+
+    Returns:
+        AQI value
+    """
+    pm = round(pm, 1)
+    if pm_size not in ["2.5", "10"]:
+        raise Exception(f"Valid pm_size options are 2.5 and 10. {pm_size} was given.")
+
+    aqi_scale = {"2.5": PM_25_AQI_SCALE, "10": PM_10_AQI_SCALE}[pm_size]
+    aqi_group, c_lo, c_hi, aqi_lo, aqi_hi = find_aqi_group(pm, aqi_scale)
+
+    print(f"AQI: {aqi_group}\nc_low: {c_lo}\nc_high: {c_hi}\naqi_low: {aqi_lo}\naqi_high: {aqi_hi}")
+    # print(pd.DataFrame(aqi_scale))
+
+
 def collect_weather_data():
     """ Collects relevant data.
 
@@ -89,6 +125,7 @@ def collect_weather_data():
     pressure = millibar_to_inhg(sense.get_pressure())
     pm_25, pm_10 = get_particulate_readings()
     return temp, humidity, pressure, pm_25, pm_10
+
 
 def get_timestamp_string(tz="UTC", str_fmt="%Y-%m-%d %H:%M:%S"):
     """ Gets the current timestamp for now.
@@ -109,6 +146,8 @@ def main():
     """    
     timestamp = get_timestamp_string()
     temp, humidity, pressure, pm_25, pm_10 = collect_weather_data()
+    aqi_25 = compute_aqi(pm_25, "2.5")
+    aqi_10 = compute_aqi(pm_10, "10")
 
     print(f"Time: {timestamp}")
     print(f"Temp: {temp:.1f}\nHumidity: {humidity:.1f}\nPressure: {pressure:.1f}")

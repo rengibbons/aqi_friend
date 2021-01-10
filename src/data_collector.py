@@ -82,11 +82,21 @@ def get_particulate_readings():
 
 
 def find_aqi_group(pm: float, aqi_scale: np.array):
-    """ . """
+    """ Get information about the AQI group.
+
+    Args:
+        pm: the PM reading
+        aqi_scale: np.array (DataFrame style) with AQI table cutoffs
+
+    Returns:
+        Tuple with AQI category, high and low concentration and AQI"""
+    if pm > aqi_scale["c_hi"].max():
+        return "exceeds_scale", 999, 999, 999, 999
+
     aqi_scale = aqi_scale[aqi_scale["c_lo"] <= pm]
     aqi_scale = aqi_scale[aqi_scale["c_hi"] >= pm]
     if aqi_scale.shape[0] != 1:
-        raise Exception(f"{aqi_scale.shape[0]} AQI groups found. Something went wrong.")
+        raise Exception(f"{aqi_scale.shape[0]} AQI groups found for PM = {pm}. Something went wrong.")
     return aqi_scale[0]
 
 
@@ -100,15 +110,20 @@ def compute_aqi(pm: float, pm_size: str):
     Returns:
         AQI value
     """
-    pm = round(pm, 1)
     if pm_size not in ["2.5", "10"]:
         raise Exception(f"Valid pm_size options are 2.5 and 10. {pm_size} was given.")
+    n_demicals = {"2.5": 1, "10": 0}[pm_size]
+    pm = round(pm, n_demicals)
 
     aqi_scale = {"2.5": PM_25_AQI_SCALE, "10": PM_10_AQI_SCALE}[pm_size]
     aqi_group, c_lo, c_hi, aqi_lo, aqi_hi = find_aqi_group(pm, aqi_scale)
+    if aqi_group == "exceeds_scale":
+        return 999, aqi_group
+    aqi = (aqi_hi - aqi_lo) / (c_hi - c_lo) * (pm - c_lo) + aqi_lo
 
-    print(f"AQI: {aqi_group}\nc_low: {c_lo}\nc_high: {c_hi}\naqi_low: {aqi_lo}\naqi_high: {aqi_hi}")
+    # print(f"AQI: {aqi_group}\nc_low: {c_lo}\nc_high: {c_hi}\naqi_low: {aqi_lo}\naqi_high: {aqi_hi}")
     # print(pd.DataFrame(aqi_scale))
+    return round(aqi)
 
 
 def collect_weather_data():
@@ -122,9 +137,9 @@ def collect_weather_data():
     """
     temp = celsius_to_farhrenheit(sense.get_temperature())
     humidity = sense.get_humidity()
+    sense.get_pressure() # on Pi reboot, first call often returns 0
     pressure = millibar_to_inhg(sense.get_pressure())
-    pm_25, pm_10 = get_particulate_readings()
-    return temp, humidity, pressure, pm_25, pm_10
+    return temp, humidity, pressure
 
 
 def get_timestamp_string(tz="UTC", str_fmt="%Y-%m-%d %H:%M:%S"):
@@ -143,15 +158,19 @@ def get_timestamp_string(tz="UTC", str_fmt="%Y-%m-%d %H:%M:%S"):
 def main():
     """
     Calls main.
-    """    
+    """
     timestamp = get_timestamp_string()
-    temp, humidity, pressure, pm_25, pm_10 = collect_weather_data()
+    temp, humidity, pressure = collect_weather_data()
+    pm_25, pm_10 = get_particulate_readings()
+
     aqi_25 = compute_aqi(pm_25, "2.5")
     aqi_10 = compute_aqi(pm_10, "10")
+    aqi = max(aqi_25, aqi_10)
 
     print(f"Time: {timestamp}")
     print(f"Temp: {temp:.1f}\nHumidity: {humidity:.1f}\nPressure: {pressure:.1f}")
-    print(f"PM2.5: {pm_25}\nPM10: {pm_10}")
+    print(f"PM2.5:  {pm_25}  PM10: {pm_10}")
+    print(f"AQI2.5: {aqi_25}   AQI10: {aqi_10} -> AQI {aqi}")
 
 
 if __name__ == "__main__":

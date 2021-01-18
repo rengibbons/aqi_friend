@@ -17,7 +17,7 @@ import numpy as np
 from sense_hat import SenseHat
 
 from aqi_tables import PM_25_AQI_SCALE, PM_10_AQI_SCALE
-
+from sql_utils import close_db_connection, insert_air_quality_reading, select_all_table_data
 
 sense = SenseHat()
 serial_device = serial.Serial()
@@ -171,6 +171,13 @@ def main():
     print(f"Temp: {temp:.1f}\nHumidity: {humidity:.1f}\nPressure: {pressure:.1f}")
     print(f"PM2.5:  {pm_25}  PM10: {pm_10}")
     print(f"AQI2.5: {aqi_25}   AQI10: {aqi_10} -> AQI {aqi}")
+
+    air_quality_data = (timestamp, temp, pressure, humidity, pm_25, pm_10, aqi)
+    insert_air_quality_reading(air_quality_data)
+
+    df = select_all_table_data()
+    print(df.tail(5))
+    close_db_connection()
 
 
 if __name__ == "__main__":
